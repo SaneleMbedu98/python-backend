@@ -1,0 +1,4 @@
+db.countries.find().limit(5)
+show collections
+use countries_db
+show dbs
