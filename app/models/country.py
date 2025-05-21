@@ -1,5 +1,6 @@
 from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
+from typing import List, Dict, Any, Optional
 import re
 
 class CountryModel:
@@ -10,28 +11,47 @@ class CountryModel:
     def normalize_name(self, name: str) -> str:
         return re.sub(r'\s+', ' ', name.strip().lower())
 
-    def find_all(self):
+    def find_all(self) -> List[Dict[str, Any]]:
         try:
             return list(self.collection.find({}, {"_id": 0}))
         except ServerSelectionTimeoutError:
             raise Exception("Could not connect to MongoDB")
 
-    def find_by_name(self, name: str):
+    def search_by_name(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
+        try:
+            norm_query = self.normalize_name(query)
+            if not norm_query:
+                print("Empty query, returning empty list")
+                return []
+            print(f"Searching for: {norm_query}")
+            countries = self.collection.find(
+                {"name": {"$regex": f"^{re.escape(norm_query)}", "$options": "i"}},
+                {"_id": 0}
+            ).limit(limit)
+            result = list(countries)
+            print(f"Found {len(result)} countries")
+            return result
+        except ServerSelectionTimeoutError:
+            raise Exception("Could not connect to MongoDB")
+        except Exception as e:
+            raise Exception(f"Error searching countries: {str(e)}")
+
+    def find_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         try:
             norm_name = self.normalize_name(name)
             country = self.collection.find_one(
-                {"name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}},
+                {"name": {"$regex": f"^{re.escape(norm_name)}$", "$options": "i"}},
                 {"_id": 0}
             )
             return country
         except ServerSelectionTimeoutError:
             raise Exception("Could not connect to MongoDB")
 
-    def update_one(self, name: str, update_data: dict):
+    def update_one(self, name: str, update_data: dict) -> Optional[Dict[str, Any]]:
         try:
             norm_name = self.normalize_name(name)
             country = self.collection.find_one(
-                {"name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}}
+                {"name": {"$regex": f"^{re.escape(norm_name)}$", "$options": "i"}}
             )
             if not country:
                 return None
@@ -45,16 +65,3 @@ class CountryModel:
             return self.collection.find_one({"_id": country["_id"]}, {"_id": 0})
         except ServerSelectionTimeoutError:
             raise Exception("Could not connect to MongoDB")
-
-class Country:
-    def __init__(self, name, code, population):
-        self.name = name
-        self.code = code
-        self.population = population
-
-    def to_dict(self):
-        return {
-            "name": self.name,
-            "code": self.code,
-            "population": self.population
-        }

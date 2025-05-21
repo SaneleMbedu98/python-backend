@@ -1,6 +1,8 @@
 import httpx
 from app.models.country import CountryModel
 from typing import Dict, Any, Optional
+import requests  
+import aiohttp
 from starlette.concurrency import run_in_threadpool
 
 class CountryService:
@@ -56,9 +58,34 @@ class CountryService:
             country["wikipedia_summary"] = wiki_data.get("extract", None)
 
         return country
+    
+
+    async def make_custom_request(self, api_key: str, message: str, country: str):
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "model": "gpt-3.5-turbo",
+            "messages": [
+                {"role": "system", "content": f"You are a helpful assistant for questions about {country}."},
+                {"role": "user", "content": message}
+            ]
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=payload) as response:
+                if response.status == 200:
+                    return await response.json()  # Returns a dictionary
+                else:
+                    raise Exception(f"Error: {response.status} - {await response.text()}")
+
 
     def update_country(self, name: str, update_data: dict):
         update_data = {k: v for k, v in update_data.items() if v is not None}
         if not update_data:
             raise ValueError("No valid fields to update")
         return self.country_model.update_one(name, update_data)
+    

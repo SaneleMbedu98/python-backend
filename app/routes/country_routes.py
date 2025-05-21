@@ -14,10 +14,21 @@ def init_routes(country_service: CountryService):
         except Exception as e:
             abort(500, description=str(e))
 
-    @country_bp.route("/<name>", methods=["GET"])
-    def get_country(name: str):
+    @country_bp.route("/search", methods=["GET"])
+    async def search_countries():
         try:
-            country = asyncio.run(country_service.get_country_details(name))
+            query = request.args.get("q")
+            if not query:
+                abort(400, description="Search query is required")
+            countries = await country_service.search_countries(query)
+            return jsonify({"countries": countries})
+        except Exception as e:
+            abort(500, description=str(e))
+
+    @country_bp.route("/<name>", methods=["GET"])
+    async def get_country(name: str):
+        try:
+            country = await country_service.get_country_details(name)
             if country:
                 return jsonify(country)
             abort(404, description="Country not found")

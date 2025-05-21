@@ -1,0 +1,28 @@
+Issue Summary: 404 Error on /countries/search Endpoint
+
+Problem
+
+The application’s frontend (Home.js) sent a GET request to http://localhost:8000/countries/search?q=<query> (e.g., q=south), expecting a response like {"countries": [...]}. Instead, it received a 404 Not Found error with {"detail":"Country not found"}. This error matched the response from the FastAPI /countries/{name} endpoint, indicating that requests to /countries/search were incorrectly routed.
+
+Root Cause
+
+FastAPI matches routes in the order they are defined. In main.py, the /countries/{name} endpoint (dynamic route) was defined before the /countries/search endpoint (specific route). As a result, FastAPI treated /countries/search as /countries/{name} with name="search", calling the get_country_by_name function. Since no country named "search" existed in the MongoDB database, it returned a 404 error with {"detail":"Country not found"}.
+
+Additionally, a Flask Blueprint (country_routes.py) was present in the codebase, defining similar routes but lacking /countries/search. While the error message confirmed FastAPI was active, the Flask code may have caused confusion or previous issues if run on the same port (8000).
+
+Resolution
+
+
+
+
+
+Reordered FastAPI Routes:
+
+
+
+
+
+In main.py, the /countries/search endpoint was moved before /countries/{name} to ensure FastAPI matches the specific route first. This allowed GET /countries/search?q=<query> to correctly call the search_countries function, returning {"countries": [...]}.
+
+
+

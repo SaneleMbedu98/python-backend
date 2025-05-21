@@ -5,3 +5,7 @@ pydantic==2.7.1
 uvicorn
 fastapi
 pytest
+flask-cors 
+openai >= 1.0.0
+httpx 
+motor
