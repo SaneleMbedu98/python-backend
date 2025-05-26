@@ -8,8 +8,9 @@ WORKDIR /backend
 COPY requirements.txt .
 
 # Install dependencies
+RUN apt-get update && apt-get install -y ca-certificates && update-ca-certificates
 RUN pip install --no-cache-dir -r requirements.txt  
-RUN pip install pytest requests aiohttp httpx starlette
+RUN pip install pytest requests aiohttp httpx starlette redis
 
 
 COPY . .

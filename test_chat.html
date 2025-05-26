@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Country Chat</title>
+</head>
+<body>
+    <h1>Test AI Chat Endpoint</h1>
+    <form id="chatForm">
+        <label for="country">Country:</label>
+        <input type="text" id="country" value="South Africa"><br><br>
+        <label for="message">Message:</label>
+        <textarea id="message" rows="4" cols="50">What are the top tourist attractions in South Africa?</textarea><br><br>
+        <button type="submit">Send</button>
+    </form>
+    <h2>Response:</h2>
+    <pre id="response"></pre>
+    <script>
+        document.getElementById('chatForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const country = document.getElementById('country').value;
+            const message = document.getElementById('message').value;
+            const responseDiv = document.getElementById('response');
+            try {
+                const response = await fetch(`http://localhost:8000/countries/${encodeURIComponent(country)}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    responseDiv.textContent = JSON.stringify(data, null, 2);
+                } else {
+                    responseDiv.textContent = `Error: ${data.detail}`;
+                }
+            } catch (error) {
+                responseDiv.textContent = `Error: ${error.message}`;
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,237 @@
+README: Saneles Country API
+This document outlines the Saneles Country API, a FastAPI application providing country data, AI-powered chat, and interactive maps. It details issues encountered during development, their root causes, resolutions, and key considerations for API usage, including restrictions with OpenAI’s APIs and the prevalence of paid API versions. It serves as a reference for developers maintaining or extending the project.
+Project Overview
+
+Purpose: Provides endpoints for country details, AI-driven chat about countries (using Hugging Face), and interactive maps with points of interest (POIs) and Mapillary images.
+Tech Stack: FastAPI, MongoDB, Hugging Face Inference API, Mapillary, MapTiler, Nominatim, Overpass API.
+Key Endpoints:
+GET /countries/{name}/map: Returns an HTML map with country boundaries, POIs, and Mapillary images (markers sized 16x24 pixels).
+POST /countries/{name}/chat: Answers country-related questions using Hugging Face’s meta-llama/Meta-Llama-3-8B-Instruct model.
+GET /countries/search?q=<query>: Searches for countries by name.
+
+
+
+Issues Encountered and Resolutions
+1. 404 Error on /countries/search Endpoint
+Issue Summary: The frontend (Home.js) sent a GET request to http://localhost:8000/countries/search?q=<query> (e.g., q=south), expecting {"countries": [...]}. Instead, it received a 404 error with {"detail":"Country not found"}, matching the /countries/{name} endpoint’s response.
+Root Cause:
+
+FastAPI matches routes in definition order. In main.py, the dynamic route /countries/{name} was defined before /countries/search. FastAPI interpreted /countries/search as /countries/{name} with name="search", calling get_country_by_name. No country named "search" existed in MongoDB, causing a 404.
+A Flask Blueprint (country_routes.py) defined similar routes without /countries/search, potentially causing confusion if Flask ran on port 8000 previously.
+
+Resolution:
+
+Reordered routes in main.py to place /countries/search before /countries/{name}.
+Ensured search_countries handled queries correctly.
+
+Code Example:
+@app.get("/countries/search", response_model=Dict[str, List[Dict[str, Any]]], tags=["search"])
+async def search_countries(q: str = Query(..., description="Search query")):
+    countries = await run_in_threadpool(country_model.search_by_name, q.lower())
+    return {"countries": countries or []}
+
+@app.get("/countries/{name}", response_model=Dict[str, Any], tags=["countries"])
+async def get_country_by_name(name: str = Path(..., description="Country name")):
+    country = await country_service.get_country_details(name.lower())
+    if not country:
+        raise HTTPException(status_code=404, detail="Country not found")
+    return country
+
+2. CORS-Related Issues
+Issue Summary: The frontend (e.g., http://localhost:3000) failed to access API endpoints, receiving CORS errors like "Access to XMLHttpRequest at 'http://localhost:8000' from origin 'http://localhost:3000' has been blocked by CORS policy."
+Root Cause:
+
+FastAPI lacked CORS configuration, blocking cross-origin requests from the frontend.
+
+Resolution:
+
+Added CORS middleware in main.py to allow requests from all origins (development) or specific origins (production).
+
+Code Example:
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Use ["http://localhost:3000"] in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+3. ECONNREFUSED 127.0.0.1:8000 Error
+Issue Summary: A POST request to http://localhost:8000/countries/south%20africa/chat resulted in ECONNREFUSED 127.0.0.1:8000, indicating the server wasn’t running.
+Root Cause:
+
+The FastAPI server wasn’t started or crashed due to a NameError (Issue 4).
+Port 8000 was occasionally occupied.
+
+Resolution:
+
+Started the server:uvicorn main:app --reload --port 8000
+
+
+Resolved port conflicts:lsof -i :8000
+kill -9 <pid>
+
+
+Used port 8001 if needed:uvicorn main:app --reload --port 8001
+
+
+
+4. NameError: name 'CountryChatRequest' is not defined
+Issue Summary: The server failed to start, throwing NameError: name 'CountryChatRequest' is not defined in main.py at the /countries/{name}/chat endpoint, causing ECONNREFUSED.
+Root Cause:
+
+The CountryChatRequest Pydantic model was referenced but not defined in main.py.
+
+Resolution:
+
+Defined CountryChatRequest in main.py with Pydantic imports.
+
+Code Example:
+from pydantic import BaseModel, Field
+
+class CountryChatRequest(BaseModel):
+    message: str = Field(..., example="What is the culture like in South Africa?")
+
+5. OpenAI API Quota and Key Errors
+Issue Summary:
+
+The chat endpoint returned {"detail":"OpenAI API error: ... \"type\": \"insufficient_quota\"..."} due to an exhausted OpenAI API key quota.
+Later, it returned {"detail":"OpenAI API error: ... \"code\": \"invalid_api_key\"..."} when a Hugging Face key was used with OpenAI’s API.
+
+Root Cause:
+
+The OpenAI API key in .env lacked credits.
+CountryService.make_custom_request was configured for OpenAI but received a Hugging Face key.
+
+Resolution:
+
+Switched to Hugging Face’s free Inference API (meta-llama/Meta-Llama-3-8B-Instruct).
+Updated make_custom_request and main.py to use HUGGINGFACE_API_KEY.
+
+Code Example (in app/services/country_service.py):
+async def make_custom_request(self, api_key: str, message: str, country: str):
+    url = "https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3-8B-Instruct"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "inputs": f"<|begin_of_text|>You are a helpful assistant for questions about {country}. {message}<|end_of_text|>",
+        "parameters": {
+            "max_new_tokens": 500,
+            "return_full_text": False,
+            "temperature": 0.7
+        }
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=payload) as response:
+            if response.status == 200:
+                result = await response.json()
+                if isinstance(result, list) and len(result) > 0 and "generated_text" in result[0]:
+                    return {"choices": [{"message": {"content": result[0]["generated_text"].strip()}}]}
+                else:
+                    raise HTTPException(status_code=500, detail="Unexpected response format from Hugging Face API")
+            else:
+                error_text = await response.text()
+                raise HTTPException(status_code=response.status, detail=f"Hugging Face API error: {error_text}")
+
+6. Hugging Face API "Not Found" Error
+Issue Summary: The chat endpoint returned {"detail":"Hugging Face API error: Not Found"} after switching to Hugging Face.
+Root Cause:
+
+The model URL (mixtral-8x7b-instruct-v0.1) was incorrect or unavailable.
+The API key may have lacked access to the model.
+
+Resolution:
+
+Used meta-llama/Meta-Llama-3-8B-Instruct with proper Llama-3 prompt tokens.
+Verified the API key at https://huggingface.co/settings/tokens.
+
+Code Example: See make_custom_request above.
+API Restrictions and Paid Models
+OpenAI API Restrictions
+OpenAI’s APIs (e.g., ChatGPT, GPT-3.5-turbo) are primarily paid, with strict restrictions on free usage:
+
+Free Tier: Offers limited credits (e.g., $5-$18) for new users, valid for 3 months. Once exhausted, API access stops, causing insufficient_quota errors (as encountered).
+Rate Limits: Free tier has low request limits (e.g., 200 requests/day, 40k tokens/minute for GPT-3.5-turbo).
+Paid Tier: Requires a billing plan ($0.50-$2.00 per 1M tokens for GPT-3.5-turbo, higher for GPT-4). Users must add a payment method at https://platform.openai.com/account/billing.
+Key Management: Keys are tied to usage quotas, and invalid or quota-exhausted keys return invalid_api_key or insufficient_quota errors.
+Access: Some models (e.g., GPT-4) require paid accounts or approval, limiting free-tier capabilities.
+Alternative Chosen: Due to quota exhaustion, the project switched to Hugging Face’s free Inference API, which supports models like meta-llama/Meta-Llama-3-8B-Instruct with fewer restrictions for low-volume use.
+
+Prevalence of Paid APIs
+Most AI and data APIs used in this project favor paid models, limiting free-tier capabilities:
+
+Hugging Face: Free Inference API offers ~100 requests/hour for models like Meta-Llama-3-8B-Instruct, but with rate limits and potential latency. Paid plans ($9/month or $0.06/hour for serverless) provide higher quotas and dedicated endpoints.
+Mapillary: Free API access requires a client ID, but high-volume usage or advanced features (e.g., bulk image processing) may incur costs.
+MapTiler: Free tier supports limited requests (e.g., 100k tile requests/month); paid plans ($49+/month) unlock higher limits and premium layers.
+Nominatim: Free for low-volume use via public servers, but heavy usage requires a local instance or paid geocoding services (e.g., Geocod.io).
+Overpass API: Free for public queries, but performance degrades with complex or frequent requests, pushing users toward private instances.
+Unsplash/Pixabay/Pexels: Free tiers limit requests (e.g., Unsplash: 50/hour); paid plans offer higher limits and commercial use.
+Implications: Free tiers suffice for development but often require paid upgrades for production due to rate limits, quotas, or feature restrictions. This project uses free tiers where possible (e.g., Hugging Face) to minimize costs.
+
+Setup Instructions
+
+Install Dependencies:
+pip install fastapi uvicorn pymongo httpx aiohttp python-dotenv
+
+
+Configure .env:
+MONGODB_URL=mongodb://localhost:27017
+MONGODB_DB=countries_db
+MONGODB_COLLECTION=countries
+HUGGINGFACE_API_KEY=your_huggingface_api_key
+MAPILLARY_CLIENT_ID=your_mapillary_client_id
+MAPTILER_API_KEY=your_maptiler_api_key
+
+
+Get HUGGINGFACE_API_KEY from https://huggingface.co/settings/tokens.
+Obtain MAPILLARY_CLIENT_ID and MAPTILER_API_KEY from their platforms.
+
+
+MongoDB Setup:
+
+Start MongoDB:mongod
+
+
+Add test data:use countries_db
+db.countries.insertOne({ name: "South Africa", capital: "Pretoria" })
+
+
+
+
+Run the Server:
+uvicorn main:app --reload --port 8000
+
+
+Test Endpoints:
+
+Chat:curl -X POST "http://localhost:8000/countries/south%20africa/chat" \
+     -H "Content-Type: application/json" \
+     -d '{"message": "What is the culture like in South Africa?"}'
+
+
+Map: Visit http://localhost:8000/countries/south%20africa/map.
+Search:curl "http://localhost:8000/countries/search?q=south"
+
+
+
+
+
+Troubleshooting Tips
+
+Port Conflicts: Check with lsof -i :8000 and use kill -9 <pid> or port 8001.
+Hugging Face Rate Limits: Wait for 429 errors (~100 requests/hour free).
+MongoDB Errors: Verify data with db.countries.find({ name: { $regex: "South Africa", $options: "i" } }).
+CORS Issues: Confirm CORS middleware in main.py.
+API Keys: Validate at respective platforms (Hugging Face, Mapillary, MapTiler).
+
+Notes
+
+The /countries/{name}/map endpoint uses Leaflet with 16x24-pixel markers.
+Hugging Face’s free tier may have latency; cache responses for production.
+For xAI API queries, see https://x.ai/api.
+
+Last Updated: May 22, 2025, 10:40 PM SAST
