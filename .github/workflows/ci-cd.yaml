@@ -27,11 +27,11 @@ jobs:
       - name: Debug directory structure
         run: |
           ls -la
-          ls -la python-backend || true
-          ls -la python-backend/app || true
-          ls -la python-backend/requirements.txt || true
-          ls -la python-backend/Dockerfile || true
-          ls -la python-backend/.env.example || true
+          ls -la app || true
+          ls -la requirements.txt || true
+          ls -la Dockerfile || true
+          ls -la .env || true
+          find . -name requirements.txt || true
         working-directory: .
 
       - name: Set up Python ${{ env.PYTHON_VERSION }}
@@ -39,13 +39,17 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
-          cache-dependency-path: python-backend/requirements.txt
+          cache-dependency-path: requirements.txt
+          check-latest: false
+          update-environment: true
+          allow-prereleases: false
+          freethreaded: false
 
       - name: Cache Docker layers
         uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ hashFiles('python-backend/Dockerfile', 'python-backend/requirements.txt') }}
+          key: ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile', 'requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-buildx-
           save-always: true
@@ -59,25 +63,25 @@ jobs:
             echo "requirements.txt not found, skipping installation"
           fi
           pip install flake8 bandit
-        working-directory: ./python-backend
+        working-directory: .
 
       - name: Run flake8 linting
         run: |
           flake8 app --max-line-length=120 --exclude __init__.py
-        working-directory: ./python-backend
+        working-directory: .
         continue-on-error: true
 
       - name: Run Bandit security scan
         run: |
           bandit -r app -f json -o bandit-report.json || true
-        working-directory: ./python-backend
+        working-directory: .
         continue-on-error: true
 
       - name: Upload Bandit report
         uses: actions/upload-artifact@v4
         with:
           name: bandit-security-report
-          path: python-backend/bandit-report.json
+          path: bandit-report.json
           retention-days: 7
 
       - name: Set up Docker Buildx
@@ -85,14 +89,19 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker buildx build \
-            --cache-from=type=local,src=/tmp/.buildx-cache \
-            --cache-to=type=local,dest=/tmp/.buildx-cache \
-            -t ${{ env.DOCKER_IMAGE_NAME }}:latest \
-            -f Dockerfile \
-            . \
-            --load
-        working-directory: ./python-backend
+          if [ -f Dockerfile ]; then
+            docker buildx build \
+              --cache-from=type=local,src=/tmp/.buildx-cache \
+              --cache-to=type=local,dest=/tmp/.buildx-cache \
+              -t ${{ env.DOCKER_IMAGE_NAME }}:latest \
+              -f Dockerfile \
+              . \
+              --load
+          else
+            echo "Dockerfile not found, skipping build"
+            exit 1
+          fi
+        working-directory: .
 
       - name: Debug cache contents
         run: ls -la /tmp/.buildx-cache || true
@@ -127,10 +136,10 @@ jobs:
         with:
           name: saneles-country-api-files
           path: |
-            python-backend/app/
-            python-backend/requirements.txt
-            python-backend/Dockerfile
-            python-backend/.env.example
+            app/
+            requirements.txt
+            Dockerfile
+            .env
           retention-days: 7
 
       - name: Notify Slack on success
