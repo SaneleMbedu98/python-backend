@@ -146,9 +146,8 @@ jobs:
         if: success()
         uses: slackapi/slack-github-action@v1.27.0
         with:
-          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
-          channel-id: 'your-channel-id' # Replace with actual channel ID
-          text: 'CI/CD Pipeline succeeded for ${{ github.repository }} on ${{ github.event_name }} #${{ github.run_number }}'
+          channel-id: 'C1234567890' # Replace with actual channel ID
+          slack-message: 'CI/CD Pipeline succeeded for ${{ github.repository }} on ${{ github.event_name }} #${{ github.run_number }}'
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
 
@@ -156,8 +155,7 @@ jobs:
         if: failure()
         uses: slackapi/slack-github-action@v1.27.0
         with:
-          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
-          channel-id: 'your-channel-id' # Replace with actual channel ID
-          text: 'CI/CD Pipeline failed for ${{ github.repository }} on ${{ github.event_name }} #${{ github.run_number }}'
+          channel-id: 'C1234567890' # Replace with actual channel ID
+          slack-message: 'CI/CD Pipeline failed for ${{ github.repository }} on ${{ github.event_name }} #${{ github.run_number }}'
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
