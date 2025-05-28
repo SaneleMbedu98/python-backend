@@ -42,9 +42,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r python-python-backend/requirements.txt
+          pip install -r python-backend/requirements.txt
           pip install flake8 bandit
-        working-directory: ./python-python-backend
+        working-directory: ./python-backend
 
       - name: Run flake8 linting
         run: |
