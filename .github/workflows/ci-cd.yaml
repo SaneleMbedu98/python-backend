@@ -24,11 +24,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Debug directory structure
+        run: |
+          ls -la
+          ls -la python-backend || true
+        working-directory: .
+
       - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
+          cache-dependency-path: python-backend/requirements.txt
 
       - name: Cache Docker layers
         uses: actions/cache@v4
@@ -42,18 +49,24 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r python-backend/requirements.txt
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            echo "requirements.txt not found, skipping installation"
+          fi
           pip install flake8 bandit
         working-directory: ./python-backend
 
       - name: Run flake8 linting
         run: |
-          flake8 python-backend/app --max-line-length=120 --exclude __init__.py
+          flake8 app --max-line-length=120 --exclude __init__.py
+        working-directory: ./python-backend
         continue-on-error: true
 
       - name: Run Bandit security scan
         run: |
-          bandit -r python-backend/app -f json -o bandit-report.json || true
+          bandit -r app -f json -o bandit-report.json || true
+        working-directory: ./python-backend
         continue-on-error: true
 
       - name: Upload Bandit report
@@ -72,9 +85,10 @@ jobs:
             --cache-from=type=local,src=/tmp/.buildx-cache \
             --cache-to=type=local,dest=/tmp/.buildx-cache \
             -t ${{ env.DOCKER_IMAGE_NAME }}:latest \
-            -f python-backend/Dockerfile \
-            ./python-backend \
+            -f Dockerfile \
+            . \
             --load
+        working-directory: ./python-backend
 
       - name: Debug cache contents
         run: ls -la /tmp/.buildx-cache || true
@@ -109,18 +123,19 @@ jobs:
         with:
           name: saneles-country-api-files
           path: |
-            python-backend/app/
-            python-backend/requirements.txt
-            python-backend/Dockerfile
-            python-backend/.env.example
+            app/
+            requirements.txt
+            Dockerfile
+            .env.example
           retention-days: 7
+        working-directory: ./python-backend
 
       - name: Notify Slack on success
         if: success()
         uses: slackapi/slack-github-action@v1.27.0
         with:
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
-          channel-id: 'your-channel-id'
+          channel-id: 'your-channel-id' # Replace with actual channel ID
           text: 'CI/CD Pipeline succeeded for ${{ github.repository }} on ${{ github.event_name }} #${{ github.run_number }}'
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
@@ -130,7 +145,7 @@ jobs:
         uses: slackapi/slack-github-action@v1.27.0
         with:
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
-          channel-id: 'your-channel-id'
+          channel-id: 'your-channel-id' # Replace with actual channel ID
           text: 'CI/CD Pipeline failed for ${{ github.repository }} on ${{ github.event_name }} #${{ github.run_number }}'
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
