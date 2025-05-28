@@ -1,6 +1,5 @@
 name: CI/CD Pipeline
 
-
 on:
   push:
     branches:
@@ -29,6 +28,10 @@ jobs:
         run: |
           ls -la
           ls -la python-backend || true
+          ls -la python-backend/app || true
+          ls -la python-backend/requirements.txt || true
+          ls -la python-backend/Dockerfile || true
+          ls -la python-backend/.env.example || true
         working-directory: .
 
       - name: Set up Python ${{ env.PYTHON_VERSION }}
@@ -124,12 +127,11 @@ jobs:
         with:
           name: saneles-country-api-files
           path: |
-            app/
-            requirements.txt
-            Dockerfile
-            .env.example
+            python-backend/app/
+            python-backend/requirements.txt
+            python-backend/Dockerfile
+            python-backend/.env.example
           retention-days: 7
-        working-directory: ./python-backend
 
       - name: Notify Slack on success
         if: success()
